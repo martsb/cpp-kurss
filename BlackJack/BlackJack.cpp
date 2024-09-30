@@ -1,6 +1,88 @@
 #include <iostream>
 using namespace std;
 
+struct number
+{
+	int value;
+	number* next;
+};
+
+void removeLarge(number*& start, int limit)
+{
+	if (start == NULL) return;
+
+	number* current = start;
+	number* previous = NULL;
+
+	while (current != NULL)
+	{
+		if (current->value > limit)
+		{
+			number* toDelete = current;
+
+			if (previous == NULL)
+			{
+				start = current->next;
+			}
+			else
+			{
+				previous->next = current->next;
+			}
+
+			current = current->next;
+			delete toDelete;
+		}
+		else
+		{
+			previous = current;
+			current = current->next;
+		}
+	}
+}
+
+
+int main()
+{
+	cout << "How many elements in the list?" << endl;
+	int size;
+	cin >> size;
+	cout << "What is the max limit for elements?" << endl;
+	int limit;
+	cin >> limit;
+	number* start = NULL, * last = NULL;
+	for (int i = 0; i < size; i++) {
+		cout << "Enter " << i + 1
+			<< ". element: ";
+		number* numb = new number;
+		cin >> numb->value;
+		numb->next = NULL;
+		if (last != NULL) {
+			last->next = numb;
+			last = numb;
+		}
+		else start = last = numb;
+	}
+	removeLarge(start, limit);
+	cout << "After discarding the largest elements the list looks like this:" << endl;
+	number* p = start;
+	while (p != NULL) {
+		cout << p->value << endl;
+		p = p->next;
+	}
+	while (start != NULL) {
+		number* temp = start;
+		start = start->next;
+		delete temp;
+	}
+	return 0;
+}
+
+
+/*
+
+#include <iostream>
+using namespace std;
+
 int main()
 {
     struct MyStruct
@@ -59,7 +141,7 @@ int main()
 
 
 
-/*
+
 
 #include <iostream>
 #include <fstream>
