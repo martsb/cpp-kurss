@@ -1,4 +1,227 @@
 #include <iostream>
+#include <fstream>
+#include <cstring>
+using namespace std;
+
+int main() {
+	ifstream f;
+	ofstream f1;
+	f.open("f.txt");
+	f1.open("f1.txt");
+	cout << "Enter search text!" << endl;
+	char* text = new char[40];
+	cin >> text;
+
+	int number = 1;
+	char* lineText = new char[255];
+	
+	while (f.getline(lineText, 255))
+	{
+		if (strstr(lineText, text))
+		{
+			f1 << number << ". line: " << lineText << endl;
+		}
+		number++;
+	}
+
+	f.close();
+	f1.close();
+	delete[] text;
+	delete[] lineText;
+	return 0;
+}
+
+
+
+/*
+#include <string>
+#include <bitset>
+#include <vector>
+#include <iostream>
+
+using namespace std;
+
+int main() {
+	string myString = "Hello World";
+	vector<bitset<8>> bitArray; // Store each character as an 8-bit binary
+
+	// Convert each character in myString to 8-bit binary and store in bitArray
+	for (size_t i = 0; i < myString.size(); ++i) {
+		bitset<8> bits(myString[i]); // Convert each character to 8 bits
+		bitArray.push_back(bits); // Store the bits in the vector
+	}
+
+	// Output stored bits (for verification)
+	cout << "Binary representation:" << endl;
+	for (const auto& bits : bitArray) {
+		cout << bits << " ";
+	}
+	cout << endl;
+
+	// XOR each bit with 11111111 and store in a new vector
+	vector<bitset<8>> xorBitArray;
+	for (const auto& bits : bitArray) {
+		bitset<8> xorBits = bits ^ bitset<8>("11111111"); // XOR with 11111111
+		xorBitArray.push_back(xorBits); // Store the XORed bits in a new vector
+	}
+
+	// Output XORed binary values
+	cout << "XORed binary representation:" << endl;
+	for (const auto& xorBits : xorBitArray) {
+		cout << xorBits << " ";
+	}
+	cout << endl;
+
+	// Convert XORed bits back to text (encrypted text)
+	string encryptedText;
+	for (const auto& xorBits : xorBitArray) {
+		char encryptedChar = static_cast<char>(xorBits.to_ulong()); // Convert bitset to char
+		encryptedText += encryptedChar; // Append to encrypted text
+	}
+
+	// Output the encrypted text
+	cout << "Encrypted text: " << encryptedText << endl;
+
+	return 0;
+}
+
+
+
+
+#include <iostream>
+
+class NumberArray
+{
+private:
+	double arr[10];
+
+public:
+	//1.
+	NumberArray()
+	{
+		for (int i = 0; i < 10; ++i)
+		{
+			arr[i] = 0.0;
+		}
+	}
+	//2.
+	~NumberArray()
+	{
+		std::cout << "Masîvs ir izdzçsts!";
+	}
+
+	//3.
+	void Change(int i, double v)
+	{
+		arr[i] = v;
+	}
+	//4.
+	double Mode()
+	{
+		int maxCount = 0;
+		double modeValue = arr[0];
+
+		for (int i = 0; i < 10; ++i)
+		{
+			int count = 0;
+			for (int j = 0; j < 10; ++j)
+			{
+				if (arr[i] == arr[j])
+				{
+					count++;
+				}
+			}
+			if (count > maxCount)
+			{
+				maxCount = count;
+				modeValue = arr[i];
+			}
+		}
+
+		return modeValue;
+	}
+	//5.
+	double Median()
+	{
+		double tempArr[10];
+		for (int i = 0; i < 10; ++i)
+		{
+			tempArr[i] = arr[i];
+		}
+		Sort(tempArr, 10);
+		return (tempArr[4] + tempArr[5]) / 2.0;
+	}
+
+	void Sort(double arr[], int size)
+	{
+		for (int i = 0; i < size - 1; ++i)
+		{
+			for (int j = 0; j < size - 1 - i; ++j)
+			{
+				if (arr[j] > arr[j + 1])
+				{
+					Swap(arr[j], arr[j + 1]);
+				}
+			}
+		}
+	}
+
+	void Swap(double& a, double& b)
+	{
+		double temp = a;
+		a = b;
+		b = temp;
+	}
+
+
+	//6.
+	void Print()
+	{
+		for (int i = 0; i < 10; ++i)
+		{
+			std::cout << arr[i] << std::endl;
+		}
+		std::cout << std::endl;
+	}
+
+	//7.
+	void Initialize()
+	{
+		for (int i = 0; i < 10; ++i) {
+			arr[i] = 0.0;
+		}
+	}
+};
+
+int main() 
+{
+	NumberArray numArr;
+
+	numArr.Initialize();
+
+	numArr.Change(0, 1.0);
+	numArr.Change(1, 2.0);
+	numArr.Change(2, 2.0);
+	numArr.Change(3, 3.0);
+	numArr.Change(4, 4.0);
+	numArr.Change(5, 5.0);
+	numArr.Change(6, 6.0);
+	numArr.Change(7, 6.0);
+	numArr.Change(8, 7.0);
+	numArr.Change(9, 8.0);
+
+	std::cout << "Elementi: " << std::endl;
+	numArr.Print();
+
+	std::cout << "Moda: " << numArr.Mode() << std::endl;
+	std::cout << "Mediâna: " << numArr.Median() << std::endl;
+
+	return 0;
+}
+
+
+
+#include <iostream>
 using namespace std;
 
 struct number
@@ -41,7 +264,7 @@ void removeLarge(number*& start, int limit)
 }
 
 
-int main()
+int main() 
 {
 	cout << "How many elements in the list?" << endl;
 	int size;
@@ -78,7 +301,7 @@ int main()
 }
 
 
-/*
+
 
 #include <iostream>
 using namespace std;
