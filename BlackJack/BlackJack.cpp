@@ -1,37 +1,424 @@
+#include <array>
+#include <vector>
 #include <iostream>
-#include <fstream>
-#include <cstring>
-using namespace std;
+#include <iomanip>
 
-int main() {
-	ifstream f;
-	ofstream f1;
-	f.open("f.txt");
-	f1.open("f1.txt");
-	cout << "Enter search text!" << endl;
-	char* text = new char[40];
-	cin >> text;
+using Byte = uint8_t;
+using State = std::array<std::array<Byte, 4>, 4>; // 4x4 state array
+using Word = std::array<Byte, 4>;                // A word of 4 bytes
+using KeySchedule = std::vector<Word>;          // Key schedule as an array of words
 
-	int number = 1;
-	char* lineText = new char[255];
-	
-	while (f.getline(lineText, 255))
-	{
-		if (strstr(lineText, text))
-		{
-			f1 << number << ". line: " << lineText << endl;
+const Byte SBox[256] = {
+	0x63, 0x7c, 0x77, 0x7b, 0xf2, 0x6b, 0x6f, 0xc5, 0x30, 0x01, 0x67, 0x2b, 0xfe, 0xd7, 0xab, 0x76,
+	0xca, 0x82, 0xc9, 0x7d, 0xfa, 0x59, 0x47, 0xf0, 0xad, 0xd4, 0xa2, 0xaf, 0x9c, 0xa4, 0x72, 0xc0,
+	0xb7, 0xfd, 0x93, 0x26, 0x36, 0x3f, 0xf7, 0xcc, 0x34, 0xa5, 0xe5, 0xf1, 0x71, 0xd8, 0x31, 0x15,
+	0x04, 0xc7, 0x23, 0xc3, 0x18, 0x96, 0x05, 0x9a, 0x07, 0x12, 0x80, 0xe2, 0xeb, 0x27, 0xb2, 0x75,
+	0x09, 0x83, 0x2c, 0x1a, 0x1b, 0x6e, 0x5a, 0xa0, 0x52, 0x3b, 0xd6, 0xb3, 0x29, 0xe3, 0x2f, 0x84,
+	0x53, 0xd1, 0x00, 0xed, 0x20, 0xfc, 0xb1, 0x5b, 0x6a, 0xcb, 0xbe, 0x39, 0x4a, 0x4c, 0x58, 0xcf,
+	0xd0, 0xef, 0xaa, 0xfb, 0x43, 0x4d, 0x33, 0x85, 0x45, 0xf9, 0x02, 0x7f, 0x50, 0x3c, 0x9f, 0xa8,
+	0x51, 0xa3, 0x40, 0x8f, 0x92, 0x9d, 0x38, 0xf5, 0xbc, 0xb6, 0xda, 0x21, 0x10, 0xff, 0xf3, 0xd2,
+	0xcd, 0x0c, 0x13, 0xec, 0x5f, 0x97, 0x44, 0x17, 0xc4, 0xa7, 0x7e, 0x3d, 0x64, 0x5d, 0x19, 0x73,
+	0x60, 0x81, 0x4f, 0xdc, 0x22, 0x2a, 0x90, 0x88, 0x46, 0xee, 0xb8, 0x14, 0xde, 0x5e, 0x0b, 0xdb,
+	0xe0, 0x32, 0x3a, 0x0a, 0x49, 0x06, 0x24, 0x5c, 0xc2, 0xd3, 0xac, 0x62, 0x91, 0x95, 0xe4, 0x79,
+	0xe7, 0xc8, 0x37, 0x6d, 0x8d, 0xd5, 0x4e, 0xa9, 0x6c, 0x56, 0xf4, 0xea, 0x65, 0x7a, 0xae, 0x08,
+	0xba, 0x78, 0x25, 0x2e, 0x1c, 0xa6, 0xb4, 0xc6, 0xe8, 0xdd, 0x74, 0x1f, 0x4b, 0xbd, 0x8b, 0x8a,
+	0x70, 0x3e, 0xb5, 0x66, 0x48, 0x03, 0xf6, 0x0e, 0x61, 0x35, 0x57, 0xb9, 0x86, 0xc1, 0x1d, 0x9e,
+	0xe1, 0xf8, 0x98, 0x11, 0x69, 0xd9, 0x8e, 0x94, 0x9b, 0x1e, 0x87, 0xe9, 0xce, 0x55, 0x28, 0xdf,
+	0x8c, 0xa1, 0x89, 0x0d, 0xbf, 0xe6, 0x42, 0x68, 0x41, 0x99, 0x2d, 0x0f, 0xb0, 0x54, 0xbb, 0x16
+};
+
+
+
+const Byte InvSBox[256] = {
+	0x52, 0x09, 0x6a, 0xd5, 0x30, 0x36, 0xa5, 0x38, 0xbf, 0x40, 0xa3, 0x9e, 0x81, 0xf3, 0xd7, 0xfb,
+	0x7c, 0xe3, 0x39, 0x82, 0x9b, 0x2f, 0xff, 0x87, 0x34, 0x8e, 0x43, 0x44, 0xc4, 0xde, 0xe9, 0xcb,
+	0x54, 0x7b, 0x94, 0x32, 0xa6, 0xc2, 0x23, 0x3d, 0xee, 0x4c, 0x95, 0x0b, 0x42, 0xfa, 0xc3, 0x4e,
+	0x08, 0x2e, 0xa1, 0x66, 0x28, 0xd9, 0x24, 0xb2, 0x76, 0x5b, 0xa2, 0x49, 0x6d, 0x8b, 0xd1, 0x25,
+	0x72, 0xf8, 0xf6, 0x64, 0x86, 0x68, 0x98, 0x16, 0xd4, 0xa4, 0x5c, 0xcc, 0x5d, 0x65, 0xb6, 0x92,
+	0x6c, 0x70, 0x48, 0x50, 0xfd, 0xed, 0xb9, 0xda, 0x5e, 0x15, 0x46, 0x57, 0xa7, 0x8d, 0x9d, 0x84,
+	0x90, 0xd8, 0xab, 0x00, 0x8c, 0xbc, 0xd3, 0x0a, 0xf7, 0xe4, 0x58, 0x05, 0xb8, 0xb3, 0x45, 0x06,
+	0xd0, 0x2c, 0x1e, 0x8f, 0xca, 0x3f, 0x0f, 0x02, 0xc1, 0xaf, 0xbd, 0x03, 0x01, 0x13, 0x8a, 0x6b,
+	0x3a, 0x91, 0x11, 0x41, 0x4f, 0x67, 0xdc, 0xea, 0x97, 0xf2, 0xcf, 0xce, 0xf0, 0xb4, 0xe6, 0x73,
+	0x96, 0xac, 0x74, 0x22, 0xe7, 0xad, 0x35, 0x85, 0xe2, 0xf9, 0x37, 0xe8, 0x1c, 0x75, 0xdf, 0x6e,
+	0x47, 0xf1, 0x1a, 0x71, 0x1d, 0x29, 0xc5, 0x89, 0x6f, 0xb7, 0x62, 0x0e, 0xaa, 0x18, 0xbe, 0x1b,
+	0xfc, 0x56, 0x3e, 0x4b, 0xc6, 0xd2, 0x79, 0x20, 0x9a, 0xdb, 0xc0, 0xfe, 0x78, 0xcd, 0x5a, 0xf4,
+	0x1f, 0xdd, 0xa8, 0x33, 0x88, 0x07, 0xc7, 0x31, 0xb1, 0x12, 0x10, 0x59, 0x27, 0x80, 0xec, 0x5f,
+	0x60, 0x51, 0x7f, 0xa9, 0x19, 0xb5, 0x4a, 0x0d, 0x2d, 0xe5, 0x7a, 0x9f, 0x93, 0xc9, 0x9c, 0xef,
+	0xa0, 0xe0, 0x3b, 0x4d, 0xae, 0x2a, 0xf5, 0xb0, 0xc8, 0xeb, 0xbb, 0x3c, 0x83, 0x53, 0x99, 0x61,
+	0x17, 0x2b, 0x04, 0x7e, 0xba, 0x77, 0xd6, 0x26, 0xe1, 0x69, 0x14, 0x63, 0x55, 0x21, 0x0c, 0x7d
+};
+
+
+const Byte RCON[10] = {
+	0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80, 0x1b, 0x36
+};
+
+std::vector<Byte> padPKCS7(const std::vector<Byte>& input) {
+	size_t paddingLength = 16 - (input.size() % 16);
+	std::vector<Byte> paddedInput = input;
+	paddedInput.insert(paddedInput.end(), paddingLength, static_cast<Byte>(paddingLength));
+	return paddedInput;
+}
+
+std::vector<Byte> unpadPKCS7(const std::vector<Byte>& paddedInput) {
+	Byte paddingLength = paddedInput.back();
+	return std::vector<Byte>(paddedInput.begin(), paddedInput.end() - paddingLength);
+}
+
+// XOR the state with the round key
+void ADDROUNDKEY(State& state, const KeySchedule& w, size_t startIndex) {
+	for (size_t c = 0; c < 4; ++c) {
+		for (size_t r = 0; r < 4; ++r) {
+			state[r][c] ^= w[startIndex + c][r];
 		}
-		number++;
+	}
+}
+
+// Byte substitution using the AES S-Box
+void SUBBYTES(State& state) {
+	for (auto& row : state) {
+		for (auto& byte : row) {
+			byte = SBox[byte];
+		}
+	}
+}
+
+// Inverse byte substitution using the AES inverse S-Box
+void INVSUBBYTES(State& state) {
+	for (auto& row : state) {
+		for (auto& byte : row) {
+			byte = InvSBox[byte];
+		}
+	}
+}
+
+// Shift rows left by their index
+void SHIFTROWS(State& state) {
+	for (size_t r = 1; r < 4; ++r) {
+		std::rotate(state[r].begin(), state[r].begin() + r, state[r].end());
+	}
+}
+
+// Inverse shift rows right by their index
+void INVSHIFTROWS(State& state) {
+	for (size_t r = 1; r < 4; ++r) {
+		std::rotate(state[r].begin(), state[r].begin() + (4 - r), state[r].end());
+	}
+}
+
+Byte GF_Multiply(Byte a, Byte b) {
+	Byte result = 0;
+	while (b) {
+		if (b & 1) result ^= a;        // Add a if the least significant bit of b is set
+		bool highBitSet = a & 0x80;   // Check if the high bit is set
+		a <<= 1;                      // Multiply by x
+		if (highBitSet) a ^= 0x1b;    // Reduce modulo m(x) = x^8 + x^4 + x^3 + x + 1
+		b >>= 1;                      // Divide b by x
+	}
+	return result;
+}
+
+void MIXCOLUMNS(State& state) {
+	for (size_t c = 0; c < 4; ++c) {
+		Byte s0 = state[0][c], s1 = state[1][c], s2 = state[2][c], s3 = state[3][c];
+		state[0][c] = GF_Multiply(0x02, s0) ^ GF_Multiply(0x03, s1) ^ s2 ^ s3;
+		state[1][c] = s0 ^ GF_Multiply(0x02, s1) ^ GF_Multiply(0x03, s2) ^ s3;
+		state[2][c] = s0 ^ s1 ^ GF_Multiply(0x02, s2) ^ GF_Multiply(0x03, s3);
+		state[3][c] = GF_Multiply(0x03, s0) ^ s1 ^ s2 ^ GF_Multiply(0x02, s3);
+	}
+}
+
+void INVMIXCOLUMNS(State& state) {
+	for (size_t c = 0; c < 4; ++c) {
+		Byte s0 = state[0][c], s1 = state[1][c], s2 = state[2][c], s3 = state[3][c];
+		state[0][c] = GF_Multiply(0x0e, s0) ^ GF_Multiply(0x0b, s1) ^ GF_Multiply(0x0d, s2) ^ GF_Multiply(0x09, s3);
+		state[1][c] = GF_Multiply(0x09, s0) ^ GF_Multiply(0x0e, s1) ^ GF_Multiply(0x0b, s2) ^ GF_Multiply(0x0d, s3);
+		state[2][c] = GF_Multiply(0x0d, s0) ^ GF_Multiply(0x09, s1) ^ GF_Multiply(0x0e, s2) ^ GF_Multiply(0x0b, s3);
+		state[3][c] = GF_Multiply(0x0b, s0) ^ GF_Multiply(0x0d, s1) ^ GF_Multiply(0x09, s2) ^ GF_Multiply(0x0e, s3);
+	}
+}
+
+
+Word ROTWORD(const Word& w) {
+	return { w[1], w[2], w[3], w[0] };
+}
+
+Word SUBWORD(const Word& w) {
+	return { SBox[w[0]], SBox[w[1]], SBox[w[2]], SBox[w[3]] };
+}
+
+KeySchedule keyExpansion(const std::array<Byte, 16>& key, size_t Nk, size_t Nr) {
+	KeySchedule w(4 * (Nr + 1));
+	for (size_t i = 0; i < Nk; ++i) {
+		w[i] = { key[4 * i], key[4 * i + 1], key[4 * i + 2], key[4 * i + 3] };
 	}
 
-	f.close();
-	f1.close();
-	delete[] text;
-	delete[] lineText;
+	size_t rconIndex = 1;
+	for (size_t i = Nk; i < 4 * (Nr + 1); ++i) {
+		Word temp = w[i - 1];
+		if (i % Nk == 0) {
+			temp = SUBWORD(ROTWORD(temp));
+			temp[0] ^= RCON[rconIndex - 1]; // Apply RCON
+			rconIndex++;
+		}
+		w[i] = { static_cast<Byte>(w[i - Nk][0] ^ temp[0]),
+				 static_cast<Byte>(w[i - Nk][1] ^ temp[1]),
+				 static_cast<Byte>(w[i - Nk][2] ^ temp[2]),
+				 static_cast<Byte>(w[i - Nk][3] ^ temp[3]) };
+	}
+
+	return w;
+}
+
+void CIPHER(State& state, const KeySchedule& w, size_t Nr) {
+	ADDROUNDKEY(state, w, 0);
+
+	for (size_t round = 1; round < Nr; ++round) {
+		SUBBYTES(state);
+		SHIFTROWS(state);
+		MIXCOLUMNS(state);
+		ADDROUNDKEY(state, w, 4 * round);
+	}
+
+	SUBBYTES(state);
+	SHIFTROWS(state);
+	ADDROUNDKEY(state, w, 4 * Nr);
+}
+
+// AES INVCIPHER function
+void INVCIPHER(State& state, const KeySchedule& w, size_t Nr) {
+	ADDROUNDKEY(state, w, 4 * Nr);
+
+	for (size_t round = Nr - 1; round > 0; --round) {
+		INVSHIFTROWS(state);
+		INVSUBBYTES(state);
+		ADDROUNDKEY(state, w, 4 * round);
+		INVMIXCOLUMNS(state);
+	}
+
+	INVSHIFTROWS(state);
+	INVSUBBYTES(state);
+	ADDROUNDKEY(state, w, 0);
+}	
+std::vector<Byte> encryptCBC(const std::vector<Byte>& plaintext, const KeySchedule& keySchedule, const std::array<Byte, 16>& iv, size_t Nr) {
+	State state;
+	std::array<Byte, 16> prevBlock = iv;
+	std::vector<Byte> ciphertext;
+
+	for (size_t i = 0; i < plaintext.size(); i += 16) {
+		std::copy(plaintext.begin() + i, plaintext.begin() + i + 16, &state[0][0]);
+
+		// XOR with previous ciphertext block
+		for (size_t r = 0; r < 4; ++r)
+			for (size_t c = 0; c < 4; ++c)
+				state[r][c] ^= prevBlock[r * 4 + c];
+
+		CIPHER(state, keySchedule, Nr);
+
+		// Save ciphertext
+		for (size_t r = 0; r < 4; ++r)
+			for (size_t c = 0; c < 4; ++c)
+				prevBlock[r * 4 + c] = state[r][c];
+
+		ciphertext.insert(ciphertext.end(), &state[0][0], &state[0][0] + 16);
+	}
+
+	return ciphertext;
+}
+std::vector<Byte> decryptCBC(const std::vector<Byte>& ciphertext, const KeySchedule& keySchedule, const std::array<Byte, 16>& iv, size_t Nr) {
+	State state;
+	std::array<Byte, 16> prevBlock = iv;
+	std::vector<Byte> plaintext;
+
+	for (size_t i = 0; i < ciphertext.size(); i += 16) {
+		std::array<Byte, 16> currentBlock;
+		std::copy(ciphertext.begin() + i, ciphertext.begin() + i + 16, &state[0][0]);
+		std::copy(ciphertext.begin() + i, ciphertext.begin() + i + 16, currentBlock.begin());
+
+		INVCIPHER(state, keySchedule, Nr);
+
+		// XOR with previous ciphertext block
+		for (size_t r = 0; r < 4; ++r)
+			for (size_t c = 0; c < 4; ++c)
+				state[r][c] ^= prevBlock[r * 4 + c];
+
+		prevBlock = currentBlock;
+
+		plaintext.insert(plaintext.end(), &state[0][0], &state[0][0] + 16);
+	}
+
+	return plaintext;
+}
+
+// Helper function to print state
+void printState(const State& state) {
+	for (const auto& row : state) {
+		for (const auto& byte : row) {
+			std::cout << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(byte) << " ";
+		}
+		std::cout << "\n";
+	}
+	std::cout << "\n";
+}
+
+
+// Main function
+int main() {
+	// Example input block (128 bits represented as 4x4 matrix)
+	State input = { {
+		{0x32, 0x43, 0xf6, 0xa8},
+		{0x88, 0x5a, 0x30, 0x8d},
+		{0x31, 0x31, 0x98, 0xa2},
+		{0xe0, 0x37, 0x07, 0x34}
+	} };
+
+	std::array<Byte, 16> inputKey = { 0x2b, 0x7e, 0x15, 0x16, 0x28, 0xae, 0xd2, 0xa6,
+									 0xab, 0xf7, 0xcf, 0x45, 0x30, 0x4e, 0x3b, 0x76 };
+	KeySchedule keySchedule = keyExpansion(inputKey, 4, 10); // Nk = 4, Nr = 10
+
+	size_t Nr = 10; // Number of rounds for AES-128
+
+	std::cout << "Original State:\n";
+	printState(input);
+
+	// Encrypt
+	State encrypted = input;
+	CIPHER(encrypted, keySchedule, Nr);
+	std::cout << "\nEncrypted State:\n";
+	printState(encrypted);
+
+	// Decrypt
+	State decrypted = encrypted;
+	INVCIPHER(decrypted, keySchedule, Nr);
+	std::cout << "\nDecrypted State:\n";
+	printState(decrypted);
+
+	// Verify if decryption matches the original
+	if (input == decrypted) {
+		std::cout << "\nSuccess: Decrypted state matches the original!\n";
+	}
+	else {
+		std::cout << "\nFailure: Decrypted state does NOT match the original.\n";
+	}
+
 	return 0;
 }
 
 
+
+
+/*
+/////////////////////////////////
+string encrypt(string text)
+{
+	vector<bitset<8>> bits = convertInBits(text);
+
+	bits = addRoundKey(bits);
+	for (int i = 0; i < 9; i++)
+	{
+		bits = substituteBytes(bits);
+		bits = shiftRows(bits);
+		bits = mixColumns(bits);
+		bits = addRoundKey(bits);
+	}
+	bits = substituteBytes(bits);
+	bits = shiftRows(bits);
+	bits = addRoundKey(bits);
+
+	text = convertInText(bits);
+
+	return text;
+}
+////////////////////////////////
+
+vector<bitset<8>> addRoundKey(vector<bitset<8>> bitArray)
+{
+
+	return bitArray;
+}
+vector<bitset<8>> substituteBytes(vector<bitset<8>> bitArray)
+{
+
+	return bitArray;
+}
+vector<bitset<8>> shiftRows(vector<bitset<8>> bitArray)
+{
+
+	return bitArray;
+}
+vector<bitset<8>> mixColumns(vector<bitset<8>> bitArray)
+{
+
+	return bitArray;
+}
+vector<bitset<8>> convertInBits(string text)
+{
+	vector<bitset<8>> bitArray; // Store each character as an 8-bit binary
+
+	for (size_t i = 0; i < text.size(); ++i) 
+	{ 	// Convert each character in myString to 8-bit binary and store in bitArray
+		bitset<8> bits(text[i]); // Convert each character to 8 bits
+		bitArray.push_back(bits); // Store the bits in the vector
+	}
+	return bitArray;
+}
+///////////////////////////////////
+string decrypt(string text)
+{
+
+	vector<bitset<8>> bits = convertInBits(text);
+
+	bits = inverseAddRoundKey(bits);
+	for (int i = 0; i < 9; i++)
+	{
+		bits = inverseShiftRows(bits);
+		bits = inverseSubstituteBytes(bits);
+		bits = inverseAddRoundKey(bits);
+		bits = inverseMixColumns(bits);
+	}
+	bits = inverseShiftRows(bits);
+	bits = inverseSubstituteBytes(bits);
+	bits = inverseAddRoundKey(bits);
+
+	text = convertInText(bits);
+
+	return text;
+}
+///////////////////////////////////
+vector<bitset<8>> inverseAddRoundKey(vector<bitset<8>> bitArray)
+{
+
+	return bitArray;
+}
+vector<bitset<8>> inverseSubstituteBytes(vector<bitset<8>> bitArray)
+{
+
+	return bitArray;
+}
+vector<bitset<8>> inverseShiftRows(vector<bitset<8>> bitArray)
+{
+
+	return bitArray;
+}
+vector<bitset<8>> inverseMixColumns(vector<bitset<8>> bitArray)
+{
+
+	return bitArray;
+}
+string convertInText(const vector<bitset<8>>& bitArray)
+{
+	string text;
+
+	for (size_t i = 0; i < 16; ++i)
+	{
+		// Convert each bitset<8> to a char and add it to the text
+		char character = static_cast<char>(bitArray[i].to_ulong());
+		text += character;
+	}
+
+	return text;
+}
+*/
 
 /*
 #include <string>
@@ -85,6 +472,40 @@ int main() {
 	return 0;
 }
 
+
+
+#include <iostream>
+#include <fstream>
+#include <cstring>
+using namespace std;
+
+int main() {
+	ifstream f;
+	ofstream f1;
+	f.open("f.txt");
+	f1.open("f1.txt");
+	cout << "Enter search text!" << endl;
+	char* text = new char[40];
+	cin >> text;
+
+	int number = 1;
+	char* lineText = new char[255];
+
+	while (f.getline(lineText, 255))
+	{
+		if (strstr(lineText, text))
+		{
+			f1 << number << ". line: " << lineText << endl;
+		}
+		number++;
+	}
+
+	f.close();
+	f1.close();
+	delete[] text;
+	delete[] lineText;
+	return 0;
+}
 
 
 
